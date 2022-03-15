@@ -1,0 +1,14 @@
+{
+  "type": "module",
+  "name": "@dragiyski/web-platform",
+  "devDependencies": {
+    "@babel/eslint-parser": "^7.17.0",
+    "eslint": "github:eslint/eslint",
+    "eslint-config-standard": "github:standard/eslint-config-standard",
+    "eslint-plugin-import": "github:import-js/eslint-plugin-import"
+  },
+  "dependencies": {
+    "node-gyp": "^9.0.0"
+  },
+  "main": "index.js"
+}
