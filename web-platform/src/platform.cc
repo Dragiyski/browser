@@ -221,6 +221,37 @@ void js_get_creation_context_global(const v8::FunctionCallbackInfo<v8::Value>& i
     info.GetReturnValue().Set(return_context->Global());
 }
 
+void js_get_function_name(const v8::FunctionCallbackInfo<v8::Value> &info) {
+    auto isolate = info.GetIsolate();
+    v8::EscapableHandleScope scope(isolate);
+
+    if (!info[0]->IsFunction()) {
+        info.GetReturnValue().SetNull();
+        return;
+    }
+
+    info.GetReturnValue().Set(scope.Escape(info[0].As<v8::Function>()->GetName()));
+}
+
+void js_set_function_name(const v8::FunctionCallbackInfo<v8::Value> &info) {
+    auto isolate = info.GetIsolate();
+    v8::EscapableHandleScope scope(isolate);
+
+    if (!info[0]->IsFunction()) {
+        info.GetReturnValue().Set(0);
+        return;
+    }
+    if (!info[1]->IsString()) {
+        info.GetReturnValue().Set(1);
+        return;
+    }
+
+    auto function = info[0].As<v8::Function>();
+    auto name = info[1].As<v8::String>();
+
+    function->SetName(name);
+}
+
 NODE_MODULE_INIT() {
     {
         JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::String, name, ToString(context, "getSecurityToken"));
@@ -250,6 +281,16 @@ NODE_MODULE_INIT() {
     {
         JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::String, name, ToString(context, "getCreationContextGlobal"));
         JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::Function, value, v8::Function::New(context, js_get_creation_context_global, exports, 1, v8::ConstructorBehavior::kThrow));
+        JS_EXECUTE_IGNORE(NOTHING, exports->DefineOwnProperty(context, name, value, JS_PROPERTY_ATTRIBUTE_FROZEN));
+    }
+    {
+        JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::String, name, ToString(context, "getFunctionName"));
+        JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::Function, value, v8::Function::New(context, js_get_function_name, exports, 1, v8::ConstructorBehavior::kThrow));
+        JS_EXECUTE_IGNORE(NOTHING, exports->DefineOwnProperty(context, name, value, JS_PROPERTY_ATTRIBUTE_FROZEN));
+    }
+    {
+        JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::String, name, ToString(context, "setFunctionName"));
+        JS_EXECUTE_RETURN_HANDLE(NOTHING, v8::Function, value, v8::Function::New(context, js_get_function_name, exports, 2, v8::ConstructorBehavior::kThrow));
         JS_EXECUTE_IGNORE(NOTHING, exports->DefineOwnProperty(context, name, value, JS_PROPERTY_ATTRIBUTE_FROZEN));
     }
 }

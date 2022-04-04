@@ -12,8 +12,12 @@ export const symbols = {
     unlockToken: Symbol('unlockToken'),
     nativeExecutor: Symbol('nativeExecutor'),
     exceptionMap: Symbol('exceptionMap'),
-    stackCapture: Symbol('stackCapture')
+    stackCapture: Symbol('stackCapture'),
+    messageGeneratorStack: Symbol('messageGeneratorStack')
 };
+
+const platformStack = [];
+const platformMap = new WeakMap();
 
 export class Platform {
     constructor(options) {
@@ -24,6 +28,7 @@ export class Platform {
         this[symbols.securityStack] = [];
         this[symbols.lockToken] = Object.create(null);
         this[symbols.exceptionMap] = new WeakMap();
+        this[symbols.messageGeneratorStack] = [];
         if (Object.prototype.hasOwnProperty.call(options, 'type')) {
             const type = options.type;
             if (typeof type === 'string') {
@@ -71,11 +76,8 @@ export class Platform {
             primordials: {
                 value: Object.create(null)
             }
-        })
+        });
         copyPrimordials(this.primordials, this.global);
-        this[symbols.unlockToken] = native.getSecurityToken(this.global);
-        this.setImplementation(this, Object.create(null));
-        this[symbols.nativeExecutor] = this.executeUnlockedPlatformNativeFunction;
 
         this[symbols.stackCapture] = this.compileFunction(`platform.enterLock();
 try {
@@ -84,6 +86,13 @@ try {
 } finally {
     platform.leaveLock();
 }`, ['platform', 'object', 'constructor']);
+
+        this[symbols.unlockToken] = native.getSecurityToken(this.global);
+        this[symbols.nativeExecutor] = this.executeUnlockedPlatformNativeFunction;
+        const platformGlobal = Object.create(null);
+        platformGlobal.platform = this;
+        this.setImplementation(this, Object.create(null));
+        this.setImplementation(this.global, platformGlobal);
 
         for (const name of ['Error', 'EvalError', 'RangeError', 'ReferenceError', 'SyntaxError', 'TypeError', 'URIError', 'AggregateError']) {
             const localClass = global[name];
@@ -110,6 +119,7 @@ try {
             writable: true,
             value: immediateStackTrace
         });
+        platformMap.set(this.global, this);
     }
 
     is(type) {
@@ -508,6 +518,51 @@ try {
         return this;
     }
 
+    enterMessageContext(generator, extend = false) {
+        if (typeof generator !== 'function') {
+            throw new TypeError('The `generator` argument is not a function');
+        }
+        this[symbols.messageGeneratorStack].unshift({
+            generator,
+            extend: Boolean(extend)
+        });
+        return this;
+    }
+
+    leaveMessageContext(generator) {
+        if (this[symbols.messageGeneratorStack].length <= 0 || this[symbols.messageGeneratorStack][0] !== generator) {
+            throw new TypeError('Mismatch generator stack: check if every `enterMessageContext` has corresponding `leaveMessageContext`.');
+        }
+        this[symbols.messageGeneratorStack].shift();
+        return this;
+    }
+
+    generateMessage(message) {
+        for (let i = 0; i < this[symbols.messageGeneratorStack].length; ++i) {
+            const context = this[symbols.messageGeneratorStack][i];
+            message = (0, context.generator)(message);
+            if (!context.extend) {
+                break;
+            }
+        }
+        return message;
+    }
+
+    getFunctionName(fn) {
+        return native.getFunctionName(fn);
+    }
+
+    setFunctionName(fn, name) {
+        let result = native.setFunctionName(fn, name);
+        if (result === 0) {
+            throw new TypeError('`fn` is not a function');
+        }
+        if (result === 1) {
+            throw new TypeError('`name` is not a string');
+        }
+        return this;
+    }
+
     static unwrapThisInterceptor(context, platform) {
         if (platform.hasImplementation(context.this)) {
             context.this = platform.implementationOf(context.this);
@@ -625,6 +680,52 @@ try {
             this.leaveUnlock();
         }
     }
+
+    static enterPlatform(platform) {
+        if (!(platform instanceof Platform)) {
+            throw new TypeError('parameter 1 is not a `Platform`');
+        }
+        if (platformStack.length > 0 && platformStack[0].platform === platform) {
+            ++platformStack[0].ref;
+        }
+        platformStack.unshift({
+            platform,
+            ref: 1
+        });
+        return this;
+    }
+
+    static leavePlatform(platform) {
+        if (platformStack.length <= 0 || platformStack[0].platform !== platform) {
+            throw new TypeError('Platform stack mismatch');
+        }
+        const top = platformStack[0];
+        if (--top.ref <= 0) {
+            platformStack.shift();
+        }
+        return this;
+    }
+
+    static getCurrentPlatform() {
+        if (platformStack.length <= 0) {
+            throw new Platform.ContextError('The current execution context is not in a platform');
+        }
+        return platformStack[0].platform;
+    }
+
+    static getCreationPlatform(object) {
+        if (object !== Object(object)) {
+            return null;
+        }
+        const global = native.getCreationContextGlobal(object);
+        if (global !== Object(global)) {
+            return null;
+        }
+        if (!platformMap.has(global)) {
+            return null;
+        }
+        return platformMap.get(global);
+    }
 }
 
 const interceptorNames = ['before', 'after', 'catch', 'finally'];
@@ -664,7 +765,11 @@ function arrayInterceptorsWithoutReturn(interceptors) {
 
 Platform.LockError = class LockError extends Error {
     name = 'Platform.LockError';
-}
+};
+
+Platform.ContextError = class PlatformContextError extends Error {
+    name = 'Platform.ContextError'
+};
 
 const getFactory = (function () {
     const factories = [];
@@ -683,7 +788,7 @@ const getFactory = (function () {
         const interceptors = generateFactoryInterceptors(elements);
         const fnName = 'executeNativeInternal' + interceptors.map(s => s.substr(0, 1).toUpperCase() + s.substr(1)).join('');
         code = [
-            `return function ${fnName}(platform, _this, _arguments, _newTarget) {`,
+            `return function ${fnName}(platform, _this, _arguments, _target) {`,
             ...code,
             '}'
         ];
@@ -737,7 +842,7 @@ const getFactory = (function () {
                 `${indent(1)}const entry = Object.assign(Object.create(context), {`,
                 `${indent(2)}this: _this,`,
                 `${indent(2)}arguments: _arguments,`,
-                `${indent(2)}newTarget: _newTarget`,
+                `${indent(2)}target: _target`,
                 `${indent(1)}});`
             );
         }
@@ -754,12 +859,17 @@ const getFactory = (function () {
 })();
 
 function createNativeFunctionWrapper(wrapper) {
-    return function executePlatformNativeFunction(platform, _this, _arguments, _newTarget) {
-        return platform[symbols.nativeExecutor](wrapper, _this, _arguments, _newTarget);
+    return function executePlatformNativeFunction(platform, _this, _arguments, _target) {
+        Platform.enterPlatform(platform);
+        try {
+            return platform[symbols.nativeExecutor](wrapper, _this, _arguments, _target);
+        } finally {
+            Platform.leavePlatform(platform);
+        }
     };
 }
 
-function globalConstructorGuard(platform, _this, _arguments, _newTarget) {
+function globalConstructorGuard(platform, _this, _arguments, _target) {
     throw new platform.primordials.TypeError('Illegal constructor');
 }
 
