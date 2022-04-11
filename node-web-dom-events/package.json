@@ -1,0 +1,16 @@
+{
+    "type": "module",
+    "name": "@dragiyski/node-web-standard-dom-events",
+    "devDependencies": {
+        "@babel/eslint-parser": "^7.17.0",
+        "eslint": "^8.0.0"
+    },
+    "dependencies": {
+        "@dragiyski/node-web-platform": "*",
+        "@dragiyski/node-web-error-message": "*"
+    },
+    "workspaces": [
+        "../node-web-platform",
+        "../node-web-error-message"
+    ]
+}

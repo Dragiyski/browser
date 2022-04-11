@@ -1,6 +1,6 @@
-import CustomEvent from "./src/CustomEvent.js";
-import DOMException from "./src/DOMException.js";
-import Event from "./src/Event.js";
+import CustomEvent from './CustomEvent.js';
+import DOMException from './DOMException.js';
+import Event from './Event.js';
 
 export default function (platform) {
     const agent = platform.implementationOf(platform);

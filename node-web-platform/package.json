@@ -1,0 +1,16 @@
+{
+    "type": "module",
+    "name": "@dragiyski/node-web-platform",
+    "devDependencies": {
+        "@babel/eslint-parser": "^7.17.0",
+        "eslint": "^8.0.0"
+    },
+    "dependencies": {
+        "@dragiyski/ecma-utilities": "*"
+    },
+    "workspaces": [
+        "../ecma-utilities",
+        "../node-web-error-message"
+    ],
+    "main": "index.js"
+}

@@ -1,0 +1,9 @@
+{
+    "type": "module",
+    "name": "@dragiyski/node-web-error-message",
+    "devDependencies": {
+        "@babel/eslint-parser": "^7.17.0",
+        "eslint": "^8.0.0"
+    },
+    "main": "index.js"
+}
